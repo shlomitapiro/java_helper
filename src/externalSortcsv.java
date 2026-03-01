@@ -1,13 +1,10 @@
-// sort a very large file that cannot fit into memory using external sort algorithm
-
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
 
-public class externalSort {
+public class externalSortcsv {
 
-    // מייצג שורה אחת מקובץ מסוים
     static class Entry {
         String value;
         BufferedReader reader;
@@ -18,9 +15,8 @@ public class externalSort {
         }
     }
 
-    public void externalSort(Path inputFile, Path outputFile, int chunkSize) throws Exception {
+    public void externalSortCSV(Path inputFile, Path outputFile, int chunkSize, int columnIndex) throws Exception {
 
-        // validation
         if (inputFile == null || !Files.exists(inputFile)) {
             System.out.println("NO INPUT FILE");
             throw new Exception("NO INPUT FILE");
@@ -34,24 +30,26 @@ public class externalSort {
             throw new Exception("INVALID CHUNK SIZE");
         }
 
-        // Phase 1 — פיצול ומיון במקביל
-        List<Path> tempFiles = splitAndSort(inputFile, chunkSize);
-
-        // Phase 2 — מיזוג
-        merge(tempFiles, outputFile);
-
-        // ניקוי
+        String header = readHeader(inputFile);
+        List<Path> tempFiles = splitAndSortCSV(inputFile, chunkSize, columnIndex);
+        mergeCSV(tempFiles, outputFile, header, columnIndex);
         cleanup(tempFiles);
     }
 
-    // Phase 1 — קריאת הקובץ הגדול, פיצול ל chunks, מיון כל chunk במקביל
-    private List<Path> splitAndSort(Path inputFile, int chunkSize) throws Exception {
+    private String readHeader(Path inputFile) throws Exception {
+        try (BufferedReader reader = Files.newBufferedReader(inputFile)) {
+            return reader.readLine();
+        }
+    }
+
+    private List<Path> splitAndSortCSV(Path inputFile, int chunkSize, int columnIndex) throws Exception {
         List<Path> tempFiles = new ArrayList<>();
         List<String> chunk = new ArrayList<>();
 
         ExecutorService executor = Executors.newFixedThreadPool(4);
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile.toFile()))) {
+        try (BufferedReader reader = Files.newBufferedReader(inputFile)) {
+            reader.readLine(); // דילוג על header
             String line;
             while ((line = reader.readLine()) != null) {
                 chunk.add(line);
@@ -59,15 +57,14 @@ public class externalSort {
                     List<String> currentChunk = new ArrayList<>(chunk);
                     Path tempFile = Files.createTempFile("chunk_", ".txt");
                     tempFiles.add(tempFile);
-                    executor.submit(() -> sortAndSave(currentChunk, tempFile));
+                    executor.submit(() -> sortAndSaveCSV(currentChunk, tempFile, columnIndex));
                     chunk.clear();
                 }
             }
-            // שארית
             if (!chunk.isEmpty()) {
                 Path tempFile = Files.createTempFile("chunk_", ".txt");
                 tempFiles.add(tempFile);
-                executor.submit(() -> sortAndSave(chunk, tempFile));
+                executor.submit(() -> sortAndSaveCSV(chunk, tempFile, columnIndex));
             }
         }
 
@@ -77,9 +74,13 @@ public class externalSort {
         return tempFiles;
     }
 
-    // מיין chunk ושמור לקובץ זמני
-    private void sortAndSave(List<String> chunk, Path tempFile) {
-        Collections.sort(chunk);
+    private void sortAndSaveCSV(List<String> chunk, Path tempFile, int columnIndex) {
+        chunk.sort((a, b) -> {
+            String colA = a.split(",")[columnIndex];
+            String colB = b.split(",")[columnIndex];
+            return colA.compareTo(colB);
+        });
+
         try (BufferedWriter writer = Files.newBufferedWriter(tempFile)) {
             for (String line : chunk) {
                 writer.write(line);
@@ -90,18 +91,18 @@ public class externalSort {
         }
     }
 
-    // Phase 2 — מיזוג כל הקבצים הזמניים לקובץ פלט אחד ממוין
-    private void merge(List<Path> tempFiles, Path outputFile) throws Exception {
+    private void mergeCSV(List<Path> tempFiles, Path outputFile, String header, int columnIndex) throws Exception {
         List<BufferedReader> readers = new ArrayList<>();
         for (Path tempFile : tempFiles) {
             readers.add(Files.newBufferedReader(tempFile));
         }
 
-        PriorityQueue<Entry> pq = new PriorityQueue<>(
-            (a, b) -> a.value.compareTo(b.value)
-        );
+        PriorityQueue<Entry> pq = new PriorityQueue<>((a, b) -> {
+            String colA = a.value.split(",")[columnIndex];
+            String colB = b.value.split(",")[columnIndex];
+            return colA.compareTo(colB);
+        });
 
-        // טוענים שורה ראשונה מכל קובץ
         for (BufferedReader reader : readers) {
             String line = reader.readLine();
             if (line != null) {
@@ -109,8 +110,10 @@ public class externalSort {
             }
         }
 
-        // מיזוג לקובץ פלט
         try (BufferedWriter writer = Files.newBufferedWriter(outputFile)) {
+            writer.write(header);
+            writer.newLine();
+
             while (!pq.isEmpty()) {
                 Entry smallest = pq.poll();
                 writer.write(smallest.value);
@@ -128,7 +131,6 @@ public class externalSort {
         }
     }
 
-    // מחיקת הקבצים הזמניים
     private void cleanup(List<Path> tempFiles) throws Exception {
         for (Path tempFile : tempFiles) {
             Files.deleteIfExists(tempFile);
