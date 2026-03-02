@@ -1,0 +1,26 @@
+public List<int[]> topN(Path filePath, int n) throws Exception
+```
+
+**Description:**
+You are given a large text file where each line contains a **name** and a **score** in the format: `name,score`. The file is too large to load entirely into memory. Return the top N students by score.
+
+**Requirements:**
+- Read the file **line by line** — do not use `Files.readAllLines()`
+- Use a **min-heap of size N** to find the top N efficiently
+- Return a list of `int[]` pairs `[name, score]` ordered from **highest to lowest score**
+- If two students have the same score, order **alphabetically by name**
+- If the file path is null or invalid, print `"NO FILE"` and throw an exception
+- If the file is empty, return an empty list
+- If `n < 1`, throw an `IllegalArgumentException`
+- If a line is malformed, **skip it** and continue
+- Always close the reader using **try-with-resources**
+
+**Example:**
+```
+alice,95
+bob,87
+charlie,95
+diana,91
+eve,78
+
+topN(path, 3) → [["charlie", 95], ["alice", 95], ["diana", 91]]
